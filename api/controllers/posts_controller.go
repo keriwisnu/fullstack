@@ -15,43 +15,41 @@ import (
 		"github.com/keriwisnu/fullstack/api/utils/formaterror"
 )
 
-func (server *Server) CreatePost (w http.ResponseWriter, r *http.Request) {
+func (server *Server) CreatePost(w http.ResponseWriter, r *http.Request) {
+
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		responses.ERROR(w, http.StatusUnprocessableEntity, err)
+		return
 	}
-
 	post := models.Post{}
 	err = json.Unmarshal(body, &post)
 	if err != nil {
 		responses.ERROR(w, http.StatusUnprocessableEntity, err)
 		return
 	}
-
 	post.Prepare()
 	err = post.Validate()
 	if err != nil {
 		responses.ERROR(w, http.StatusUnprocessableEntity, err)
+		return
 	}
-
 	uid, err := auth.ExtractTokenID(r)
 	if err != nil {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
 	}
-
 	if uid != post.AuthorID {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New(http.StatusText(http.StatusUnauthorized)))
+		return
 	}
-
 	postCreated, err := post.SavePost(server.DB)
 	if err != nil {
 		formattedError := formaterror.FormatError(err.Error())
 		responses.ERROR(w, http.StatusInternalServerError, formattedError)
 		return
 	}
-
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%d", r.Host, r.URL.Path, postCreated.ID))
+	w.Header().Set("Lacation", fmt.Sprintf("%s%s/%d", r.Host, r.URL.Path, postCreated.ID))
 	responses.JSON(w, http.StatusCreated, postCreated)
 }
 
@@ -68,40 +66,42 @@ func (server *Server) GetPosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) GetPost(w http.ResponseWriter, r *http.Request) {
+
 	vars := mux.Vars(r)
 	pid, err := strconv.ParseUint(vars["id"], 10, 64)
 	if err != nil {
 		responses.ERROR(w, http.StatusBadRequest, err)
 		return
 	}
-
 	post := models.Post{}
-	postRecevied, err := post.FindPostByID(server.DB, pid)
+
+	postReceived, err := post.FindPostByID(server.DB, pid)
 	if err != nil {
 		responses.ERROR(w, http.StatusInternalServerError, err)
 		return
 	}
-	responses.JSON(w, http.StatusOK, postRecevied)
+	responses.JSON(w, http.StatusOK, postReceived)
 }
 
-func (server *Server) UpdatePost (w http.ResponseWriter, r *http.Request) {
+func (server *Server) UpdatePost(w http.ResponseWriter, r *http.Request) {
+
 	vars := mux.Vars(r)
 
-	//validasi post
+	// Check if the post id is valid
 	pid, err := strconv.ParseUint(vars["id"], 10, 64)
 	if err != nil {
 		responses.ERROR(w, http.StatusBadRequest, err)
 		return
 	}
 
-	//mengecek auth token valid atau tidak, dan mengambil user id
+	//CHeck if the auth token is valid and  get the user id from it
 	uid, err := auth.ExtractTokenID(r)
 	if err != nil {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
 	}
 
-	//cek apakah post sudah ada atau belum
+	// Check if the post exist
 	post := models.Post{}
 	err = server.DB.Debug().Model(models.Post{}).Where("id = ?", pid).Take(&post).Error
 	if err != nil {
@@ -109,19 +109,19 @@ func (server *Server) UpdatePost (w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//ketika user melakukan percobaan update post yang bukan miliknya
+	// If a user attempt to update a post not belonging to him
 	if uid != post.AuthorID {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
 	}
-
-	//membaca data yang di post
+	// Read the data posted
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		responses.ERROR(w, http.StatusUnprocessableEntity, err)
+		return
 	}
 
-	//memproses request data
+	// Start processing the request data
 	postUpdate := models.Post{}
 	err = json.Unmarshal(body, &postUpdate)
 	if err != nil {
@@ -129,7 +129,7 @@ func (server *Server) UpdatePost (w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//mengecek juga request user id apakah sama dengan yang didapat dari token
+	//Also check if the request user id is equal to the one gotten from token
 	if uid != postUpdate.AuthorID {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
@@ -142,7 +142,8 @@ func (server *Server) UpdatePost (w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	postUpdate.ID = post.ID //untuk memberitahu kepada model bahwa post id diupdate, field lainnya berada dibawahnya
+	postUpdate.ID = post.ID //this is important to tell the model the post id to update, the other update field are set above
+
 	postUpdated, err := postUpdate.UpdateAPost(server.DB)
 
 	if err != nil {
@@ -154,23 +155,24 @@ func (server *Server) UpdatePost (w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) DeletePost(w http.ResponseWriter, r *http.Request) {
+
 	vars := mux.Vars(r)
 
-	//apakah valid post id diberikan kepada kita ?
+	// Is a valid post id given to us?
 	pid, err := strconv.ParseUint(vars["id"], 10, 64)
 	if err != nil {
 		responses.ERROR(w, http.StatusBadRequest, err)
 		return
 	}
 
-	//apakah ini user authenticated ?
+	// Is this user authenticated?
 	uid, err := auth.ExtractTokenID(r)
 	if err != nil {
-		responses.ERROR(w, http.StatusBadRequest, err)
+		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
 	}
 
-	//mengecek apakah post exist
+	// Check if the post exist
 	post := models.Post{}
 	err = server.DB.Debug().Model(models.Post{}).Where("id = ?", pid).Take(&post).Error
 	if err != nil {
@@ -178,42 +180,16 @@ func (server *Server) DeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//apakah user yang terauthentikasi adalah pemilik dari post ini ?
+	// Is the authenticated user, the owner of this post?
 	if uid != post.AuthorID {
 		responses.ERROR(w, http.StatusUnauthorized, errors.New("Unauthorized"))
 		return
 	}
-
 	_, err = post.DeleteAPost(server.DB, pid, uid)
 	if err != nil {
 		responses.ERROR(w, http.StatusBadRequest, err)
 		return
 	}
-
 	w.Header().Set("Entity", fmt.Sprintf("%d", pid))
 	responses.JSON(w, http.StatusNoContent, "")
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
